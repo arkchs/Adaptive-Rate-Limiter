@@ -13,7 +13,7 @@ function detectAnomaly(ip, timestamp) {
   const filtered = arr.filter(t => now - t < WINDOW);
   filtered.push(timestamp);
   trafficStats.set(ip, filtered);
- 
+
   // Calculate stats
   const count = filtered.length;
   const allCounts = Array.from(trafficStats.values()).map(a => a.length);
