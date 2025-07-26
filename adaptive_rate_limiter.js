@@ -11,7 +11,7 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const WINDOW_SIZE = 60; // seconds
 const DEFAULT_LIMIT = 100; // requests per minute
 const BAN_DURATION = 60 * 5; // seconds
-
+app.set('trust proxy', true); 
 const redisClient = new Redis(REDIS_URL);
 redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
@@ -54,7 +54,7 @@ app.use(async (req, res, next) => {
   if (count === 1) {
     await redisClient.expire(windowKey, WINDOW_SIZE);
   }
-
+  
   // Send log to worker for analysis
   sendToWorker({ ip, timestamp: now, endpoint });
 
@@ -78,10 +78,11 @@ app.get('/limits', (req, res) => {
 });
 
 // Listen for worker messages (adaptive logic)
-workers.forEach(worker => {
+workers.forEach((worker) => {
   worker.on('message', async (msg) => {
     const { ip, anomaly, action } = msg;
-    if (anomaly) {
+    console.log(`Anomaly detected for IP ${ip}: ${action}`);
+    if (anomaly) {  
       if (action === 'ban') {
         await redisClient.setex(`ban:${ip}`, BAN_DURATION, '1');
         rateLimits.set(ip, Math.max(10, Math.floor(DEFAULT_LIMIT / 5)));
