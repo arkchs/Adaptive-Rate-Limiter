@@ -1,372 +1,149 @@
-Adaptive Rate Limiter: Dynamic Traffic Management
+# Adaptive Rate Limiter: Dynamic Traffic Management
 
-This project implements an adaptive rate limiter designed to dynamically adjust API request limits for clients based on their real-time behavior. Unlike traditional static rate limiters, this system identifies and responds to different traffic patterns, allowing for more flexible and robust API protection.
-Table of Contents
+This project implements an **adaptive rate limiter** designed to dynamically adjust API request limits for clients based on their real-time behavior. Unlike traditional static rate limiters, this system identifies and responds to different traffic patterns, allowing for more flexible and robust API protection.
 
-    Project Overview
+## Table of Contents
 
-    Core Components
+1.  [Project Overview](#1-project-overview)
+2.  [Core Architectural Concepts](#2-core-architectural-concepts)
+    * [Backend Server Role](#backend-server-role)
+    * [Anomaly Detection Worker Role](#anomaly-detection-worker-role)
+3.  [Operational Principles: The Adaptive Logic](#3-operational-principles-the-adaptive-logic)
+    * [Overall Request Processing Flow](#overall-request-processing-flow)
+    * [Adaptive Limit Adjustment Mechanism](#adaptive-limit-adjustment-mechanism)
+4.  [Client Behavior Profiles for Simulation](#4-client-behavior-profiles-for-simulation)
+    * [Profile Characteristics](#profile-characteristics)
+    * [IP Address Allocation Strategy](#ip-address-allocation-strategy)
+5.  [System Setup and Execution](#5-system-setup-and-execution)
+    * [Prerequisites](#prerequisites)
+    * [Backend Configuration](#backend-configuration)
+    * [Simulation Environment Setup](#simulation-environment-setup)
+6.  [Behavioral Simulation and Control](#6-behavioral-simulation-and-control)
+    * [Direct Simulation Execution](#direct-simulation-execution)
+    * [Remote Simulation Triggering](#remote-simulation-triggering)
+7.  [Monitoring and Validation](#7-monitoring-and-validation)
+    * [Server Activity Logs](#server-activity-logs)
+    * [Current Limits Endpoint](#current-limits-endpoint)
 
-        Backend Server (adaptive_rate_limiter.js)
+---
 
-        Anomaly Detection Worker (traffic_worker.js)
+## 1. Project Overview
 
-    How it Works: The Adaptive Logic
+The Adaptive Rate Limiter is a system built on Node.js principles, leveraging a distributed data store (Redis) and concurrent processing (Node.js worker threads). Its primary objectives are:
 
-        Overall Request Flow
+* **Abuse Prevention:** Safeguarding API resources against various forms of malicious traffic, such as denial-of-service attacks or brute-force attempts.
+* **Resource Fairness:** Ensuring equitable resource distribution by dynamically throttling clients exhibiting undesirable behavior while potentially increasing access for well-behaved consumers.
+* **Dynamic Adaptability:** Providing a flexible defense mechanism that automatically adjusts to evolving traffic patterns without requiring manual intervention.
 
-        Adaptive Limit Adjustment Flow
+## 2. Core Architectural Concepts
 
-    Client Profiles for Simulation
+The system is conceptually divided into distinct components that collaborate to achieve adaptive rate limiting.
 
-        Profile Details
+### Backend Server Role
 
-        IP Address Ranges
+This component acts as the primary API gateway, processing all incoming client requests.
 
-    Setup and Running the Project
+* **Request Interception:** All API requests are first routed through this component for initial rate limit checks.
+* **Distributed State Management:** It interacts with a Redis instance to maintain a consistent view of request counts over time and to track client ban statuses across potentially multiple server instances.
+* **Workload Delegation:** It offloads the computationally intensive task of anomaly detection to a pool of specialized worker threads, ensuring the main request processing remains responsive.
+* **Policy Enforcement:** Based on real-time feedback from the anomaly detection workers, it dynamically updates and applies rate limiting policies for individual clients.
+* **Operational Endpoints:** Provides interfaces for API consumption, status monitoring, and external control of simulation tests.
 
-        Prerequisites
+### Anomaly Detection Worker Role
 
-        Backend Setup
+These are isolated, concurrent processing units responsible for sophisticated traffic analysis.
 
-        k6 Test Script Setup
+* **Asynchronous Analysis:** They receive streams of request data from the main server and perform statistical analysis without impeding the server's primary function.
+* **Behavioral Profiling:** Each worker tracks the recent request history for various client IP addresses within a defined time window.
+* **Statistical Deviation Calculation:** A key function involves calculating a Z-score for each client's request volume. This metric quantifies how significantly a client's activity deviates from the average activity observed across all clients.
+* **Behavioral Classification:** Based on the Z-score and the client's total request count, the worker classifies the client's behavior and recommends a specific adaptive action:
+    * **'ban'**: For severe, statistically significant deviations indicative of highly malicious activity.
+    * **'decrease'**: For moderate, yet notable, deviations suggesting excessive or undesirable traffic.
+    * **'increase'**: For clients exhibiting exceptionally low and consistent traffic, potentially allowing for higher resource allocation.
+* **Inter-Component Communication:** Workers communicate their findings and recommended actions back to the main server.
 
-    Simulating Client Behavior
+## 3. Operational Principles: The Adaptive Logic
 
-        Manual k6 Simulation
+### Overall Request Processing Flow
 
-        Triggering Simulations from an External App (e.g., Flutter)
+A client initiates a request which first arrives at the Backend Server. The server immediately checks if the client's IP is currently banned. If so, the request is denied. Otherwise, the server consults its current rate limit for that IP and increments the client's request count within a sliding time window. If the client's request count exceeds its assigned limit, the request is denied. If the request is allowed, a log of this activity is asynchronously sent to an Anomaly Detection Worker, and the request proceeds to the intended API endpoint, eventually receiving a successful response.
 
-    Monitoring and Verification
+*(Note: Conceptual flowcharts illustrating this process were included in previous versions but are omitted here to adhere to the "no code" constraint.)*
 
-        Server Console Logs
+### Adaptive Limit Adjustment Mechanism
 
-        /limits Endpoint
+The adaptive logic operates in parallel to the main request flow, continuously refining client policies.
 
-1. Project Overview
+A request log is transmitted to an Anomaly Detection Worker. This worker updates its internal records of the client's recent activity. It then calculates statistical metrics (mean and standard deviation) across all clients it monitors. Using these statistics, a Z-score is computed for the specific client's request count, indicating its deviation from the norm. Based on this Z-score and the client's request volume, the worker classifies the behavior and recommends an adaptive action (ban, decrease, or increase). If an anomaly is detected, the worker communicates this recommendation back to the Backend Server. The server then updates its in-memory rate limit for that client and, if a 'ban' action was recommended, updates the client's ban status in Redis.
 
-The Adaptive Rate Limiter is a Node.js Express application that uses Redis for distributed rate limiting and Node.js worker threads for asynchronous anomaly detection. Its primary goal is to:
+*(Note: Conceptual flowcharts illustrating this mechanism were included in previous versions but are omitted here to adhere to the "no code" constraint.)*
 
-    Prevent Abuse: Protect the API from malicious attacks (e.g., DDoS, brute-force).
+## 4. Client Behavior Profiles for Simulation
 
-    Improve Fairness: Dynamically allocate resources by throttling misbehaving clients while potentially increasing limits for well-behaved ones.
+To rigorously test the adaptive rate limiter, five distinct client behavior profiles are defined. Each profile is designed to elicit a specific adaptive response from the system.
 
-    Provide Flexibility: Adapt to changing traffic patterns without requiring manual configuration updates.
+### Profile Characteristics
 
-2. Core Components
+| **Profile Name** | **Simulated Request Rate (Approx.)** | **Expected Adaptive Limit Outcome** |
+| :--------------- | :----------------------------------- | :------------------------------------------------------------ |
+| **Good Client** | Very low (e.g., 12 req/min) | **Increase**: System should reward and raise their limit. |
+| **Normal Client** | Moderate (e.g., 60 req/min) | **Stay Default/Increase**: System should maintain or slightly raise their limit. |
+| **Slightly Bad Client** | Moderately high (e.g., 200 req/min) | **Decrease**: System should detect and lower their limit. |
+| **Extremely Bad Client** | Very high (e.g., 1200 req/min) | **Ban / Severe Decrease**: System should aggressively throttle or ban. |
+| **Spiky Client** | Variable (e.g., spike to 600 req/min) | **Decrease during spike, then gradual recovery/stabilization**. |
 
-The system is composed of two main JavaScript files and a Redis instance:
-Backend Server (adaptive_rate_limiter.js)
+### IP Address Allocation Strategy
 
-This is the main Express.js application that handles incoming HTTP requests.
+Each client profile is assigned a unique segment of IP addresses (e.g., `192.168.1.x`, `192.168.2.x`, etc.) through a standard HTTP header mechanism. This strategy ensures that the anomaly detection workers can independently track and analyze the behavior of each profile, allowing for clear differentiation in the adaptive policies applied.
 
-    Request Processing: Intercepts every incoming request to apply rate limiting.
+## 5. System Setup and Execution
 
-    Redis Integration: Uses ioredis to manage request counts within a sliding window and to store IP ban statuses. Redis ensures that rate limits are consistent across multiple instances of the Node.js application (if scaled horizontally).
+### Prerequisites
 
-    Worker Pool Management: Creates and manages a pool of traffic_worker.js threads. It distributes incoming request logs to these workers for asynchronous anomaly detection using a round-robin approach.
+To set up and run this project, you will need:
 
-    Adaptive Limit Enforcement: Listens for messages from the worker threads. Based on the anomaly detection results (ban, decrease, increase), it updates the rateLimits Map (in-memory) and sets/removes ban entries in Redis.
+* **Node.js:** A JavaScript runtime environment.
+* **npm or Yarn:** Package managers for Node.js.
+* **Redis Server:** A running instance of the Redis in-memory data store.
+* **k6:** A modern load testing tool for performance and functional testing.
 
-    Endpoints:
+### Backend Configuration
 
-        GET /test: A simple endpoint to receive test requests.
+1.  Obtain the necessary files for the backend server and worker components.
+2.  Install required Node.js dependencies.
+3.  Ensure the backend server is configured to correctly interpret client IP addresses when operating behind proxies or load balancers.
+4.  Optionally, fine-tune the anomaly detection thresholds within the worker component to match desired sensitivity for different traffic patterns.
+5.  Initiate the backend server process.
 
-        GET /limits: Displays the current adaptive rate limits for all tracked IP addresses.
+### Simulation Environment Setup
 
-        POST /start-simulation: A control endpoint (designed for external apps like Flutter) to trigger specific k6 test profiles.
+1.  Organize your load testing scripts in a designated directory within the project structure.
+2.  Prepare the primary simulation script, which will be parameterized to simulate specific client behaviors.
 
-Anomaly Detection Worker (traffic_worker.js)
+## 6. Behavioral Simulation and Control
 
-These are independent Node.js worker threads that perform the CPU-intensive task of analyzing traffic patterns.
+The system's adaptive behavior can be observed by simulating client traffic through two primary methods.
 
-    Asynchronous Analysis: Receives request logs from the main server and performs anomaly detection without blocking the main event loop.
+### Direct Simulation Execution
 
-    Traffic Statistics: Maintains a Map (trafficStats) to store recent request timestamps for each IP address within a defined WINDOW (1 minute).
+Specific client profiles can be simulated by executing the load testing tool directly from the command line. This involves passing environmental parameters to the simulation tool to dictate the client behavior to be generated. Multiple simulations can be run concurrently to observe interactions between different client types.
 
-    Z-score Calculation: Calculates the Z-score for each IP. The Z-score measures how many standard deviations an IP's request count deviates from the mean request count of all IPs currently being tracked by that specific worker.
+### Remote Simulation Triggering
 
-    Anomaly Classification: Based on the calculated Z-score and request count, it determines if an IP exhibits anomalous behavior and recommends an action:
+For integration with external control interfaces (e.g., a Flutter application), the Node.js backend exposes a dedicated endpoint. This allows an external application to programmatically initiate specific client behavior simulations by sending a request with the desired profile and duration. The backend then orchestrates the execution of the load testing tool in the background.
 
-        'ban': For extremely high Z-scores and high counts.
+## 7. Monitoring and Validation
 
-        'decrease': For moderately high Z-scores.
+To confirm the adaptive rate limiter's effectiveness, continuous monitoring of server activity and policy adjustments is crucial.
 
-        'increase': For significantly low Z-scores and very low counts (indicating a well-behaved client).
+### Server Activity Logs
 
-    Communication: Sends messages back to the parent thread (adaptive_rate_limiter.js) when an anomaly is detected, including the IP and the recommended action.
+The console output of the running backend server provides detailed insights into the system's operation. This includes:
 
-3. How it Works: The Adaptive Logic
-Overall Request Flow
+* Real-time statistics from the anomaly detection workers, showing client request counts, statistical averages, standard deviations, and Z-scores.
+* Notifications when anomalous behavior is detected for specific clients, along with the recommended adaptive action.
+* Confirmation messages when simulation tests are initiated via the control endpoint.
 
-graph TD
-    A[Client Request (e.g., k6 VU)] --> B(Node.js Server: adaptive_rate_limiter.js)
-    B --> C{Is IP Banned in Redis?}
-    C -- Yes --> D[Respond 429: IP Banned]
-    C -- No --> E{Get Current Rate Limit for IP}
-    E --> F[Increment Request Count in Redis (Sliding Window)]
-    F --> G{Is Count > Limit?}
-    G -- Yes --> D
-    G -- No --> H[Send Request Log to Worker Thread]
-    H --> I[Continue to API Endpoint Logic]
-    I --> J[Respond 200 OK]
+### Current Limits Endpoint
 
-Adaptive Limit Adjustment Flow
-
-graph TD
-    A[Request Log Sent to Worker] --> B(traffic_worker.js: detectAnomaly function)
-    B --> C{Update IP's Request Timestamps}
-    C --> D[Calculate Mean & Std Dev of all tracked IPs]
-    D --> E[Calculate Z-score for current IP]
-    E --> F{Z-score & Count Analysis}
-    F -- Z > Z_THRESHOLD & Count > 20 --> G[Recommend 'ban' Action]
-    F -- Z > 1.0 --> H[Recommend 'decrease' Action]
-    F -- Z < -1 & Count < 5 --> I[Recommend 'increase' Action]
-    F -- Else --> J[No Anomaly Detected]
-    G --> K(Worker Sends Message to Main Server)
-    H --> K
-    I --> K
-    K --> L(Main Server: Worker Message Listener)
-    L --> M{Update Server's in-memory rateLimits Map}
-    L --> N{Update Redis Ban Status (if 'ban' action)}
-
-4. Client Profiles for Simulation
-
-To effectively test the adaptive nature of the rate limiter, five distinct client profiles are defined in the k6 script. Each profile simulates a different traffic pattern, designed to trigger specific adaptive responses from the system.
-Profile Details
-
-Profile Name
-	
-
-k6 VUs
-	
-
-Request Rate (Approx.)
-	
-
-Expected Server Response (Adaptive Limit)
-	
-
-X-Forwarded-For IP Range
-
-Good Client
-	
-
-20
-	
-
-12 req/min
-	
-
-Increase (e.g., to 200)
-	
-
-192.168.1.0 - 192.168.1.19
-
-Normal Client
-	
-
-20
-	
-
-60 req/min
-	
-
-Stay Default/Increase (e.g., to 200)
-	
-
-192.168.2.0 - 192.168.2.19
-
-Slightly Bad Client
-	
-
-20
-	
-
-200 req/min
-	
-
-Decrease (e.g., to 20)
-	
-
-192.168.3.0 - 192.168.3.19
-
-Extremely Bad Client
-	
-
-20
-	
-
-1200 req/min
-	
-
-Ban / Severe Decrease (e.g., to 20)
-	
-
-192.168.4.0 - 192.168.4.19
-
-Spiky Client
-	
-
-20
-	
-
-Varies (spike to 600 req/min)
-	
-
-Decrease during spike, then recover/stabilize
-	
-
-192.168.5.0 - 192.168.5.19
-IP Address Ranges
-
-Each profile is assigned a unique IP address range using the X-Forwarded-For header. This ensures that the traffic_worker.js can track and analyze the behavior of each profile independently.
-
-    192.168.1.x: Good Client
-
-    192.168.2.x: Normal Client
-
-    192.168.3.x: Slightly Bad Client
-
-    192.168.4.x: Extremely Bad Client
-
-    192.168.5.x: Spiky Client
-
-5. Setup and Running the Project
-Prerequisites
-
-    Node.js: (LTS version recommended)
-
-    npm or Yarn: (Package manager for Node.js)
-
-    Redis Server: Running locally or accessible via REDIS_URL.
-
-    k6: Load testing tool. Installation Guide
-
-Backend Setup
-
-    Clone/Download Project: Get the adaptive_rate_limiter.js and traffic_worker.js files.
-
-    Install Dependencies:
-
-    npm init -y
-    npm install express ioredis
-
-    Ensure trust proxy is enabled: In adaptive_rate_limiter.js, ensure the following line is present early in your Express app setup:
-
-    app.set('trust proxy', true);
-
-    Adjust Worker Thresholds (Optional, but recommended for testing):
-    In traffic_worker.js, you might want to adjust the Z-score thresholds for easier anomaly detection during testing:
-
-    // traffic_worker.js
-    const Z_THRESHOLD = 1.8; // For banning (was 3)
-    // ...
-    } else if (z > 1.0) { // For DECREASE (was 2)
-    // ...
-
-    Start the Server:
-
-    node adaptive_rate_limiter.js
-
-    The server should start on http://localhost:5000 (or your configured PORT).
-
-k6 Test Script Setup
-
-    Create tests Directory: Create a folder named tests in the same directory as your Node.js files.
-
-    Create testing.js: Inside the tests directory, create a file named testing.js and paste the updated k6 script content (from Section 6.1).
-
-6. Simulating Client Behavior
-
-You can trigger the simulations in two ways: manually via the command line, or programmatically via a dedicated Node.js endpoint (ideal for integration with a UI like Flutter).
-Manual k6 Simulation
-
-To run a specific client profile manually using k6, use the K6_PROFILE environment variable:
-
-# Simulate Good Clients
-K6_PROFILE=good k6 run tests/testing.js
-
-# Simulate Normal Clients
-K6_PROFILE=normal k6 run tests/testing.js
-
-# Simulate Slightly Bad Clients
-K6_PROFILE=slightly_bad k6 run tests/testing.js
-
-# Simulate Extremely Bad Clients
-K6_PROFILE=extremely_bad k6 run tests/testing.js
-
-# Simulate Spiky Clients
-K6_PROFILE=spiky k6 run tests/testing.js
-
-You can run multiple of these commands in separate terminal windows concurrently to simulate mixed traffic.
-Triggering Simulations from an External App (e.g., Flutter)
-
-Your Node.js backend includes a POST /start-simulation endpoint specifically for this purpose.
-
-    Endpoint: POST http://localhost:5000/start-simulation
-
-    Request Body (JSON):
-
-    {
-      "profile": "good", // or "normal", "slightly_bad", "extremely_bad", "spiky"
-      "duration": "60s"  // Optional: override default k6 duration
-    }
-
-    Example Flutter Integration:
-    Your Flutter application would make an HTTP POST request to this endpoint when a user taps a button. The Node.js server will then spawn a k6 process in the background to run the specified simulation.
-
-    // Example Flutter code snippet (requires http package)
-    import 'package:http/http.dart' as http;
-    import 'dart:convert';
-
-    Future<void> startSimulation(String profile) async {
-      final url = Uri.parse('http://localhost:5000/start-simulation'); // Adjust to your server IP
-      try {
-        final response = await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({'profile': profile, 'duration': '60s'}),
-        );
-
-        if (response.statusCode == 200) {
-          print('Simulation started for $profile: ${response.body}');
-          // Update UI: "Simulation running..."
-        } else {
-          print('Failed to start simulation for $profile: ${response.statusCode} - ${response.body}');
-          // Update UI: Show error
-        }
-      } catch (e) {
-        print('Error sending simulation request: $e');
-        // Update UI: Handle network errors
-      }
-    }
-
-    // Example usage in a Flutter button:
-    // ElevatedButton(
-    //   onPressed: () => startSimulation('extremely_bad'),
-    //   child: Text('Simulate DDoS Attack'),
-    // ),
-
-7. Monitoring and Verification
-
-To observe the adaptive behavior, monitor your server logs and the /limits endpoint.
-Server Console Logs
-
-Keep the terminal running your adaptive_rate_limiter.js server open. You will see:
-
-    Worker processing IP: ...: Detailed logs from traffic_worker.js showing the Count, Mean, Std, and Z-score for each IP being analyzed. This helps understand why an anomaly is (or isn't) detected.
-
-    Anomaly detected for IP ...: [action]: Messages indicating when an IP has crossed a threshold and an adaptive action (decrease, increase, ban) is being applied.
-
-    [SIMULATION] Starting k6 simulation...: Logs from the /start-simulation endpoint confirming that a k6 test has been triggered.
-
-/limits Endpoint
-
-    Endpoint: GET http://localhost:5000/limits
-
-    Usage: Hit this endpoint periodically (e.g., every few seconds) using your browser or Postman while simulations are running.
-
-    Expected Output: You will see a JSON object where keys are IP addresses (e.g., 192.168.1.5) and values are their current adaptive rate limits. Observe how these limits change over time based on the simulated client behavior.
-
-By combining these monitoring techniques, you can clearly visualize and verify the dynamic adjustments made by your adaptive rate limiter.
+A dedicated API endpoint is available to query the current adaptive rate limits enforced by the system. By periodically accessing this endpoint, one can observe the dynamic changes in rate limits for various client IP addresses as the simulations progress, visually confirming the system's adaptive responses to different traffic patterns.
