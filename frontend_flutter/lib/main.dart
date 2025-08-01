@@ -42,14 +42,14 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> fetchData() async {
     setState(() { loading = true; });
     final limitsRes = await http.get(Uri.parse('http://localhost:5000/limits'));
-    final blockedRes = await http.get(Uri.parse('http://localhost:5000/blocked'));
-    final logsRes = await http.get(Uri.parse('http://localhost:5000/logs'));
-    final anomaliesRes = await http.get(Uri.parse('http://localhost:5000/anomalies'));
+    // final blockedRes = await http.get(Uri.parse('http://localhost:5000/blocked'));
+    // final logsRes = await http.get(Uri.parse('http://localhost:5000/logs'));
+    // final anomaliesRes = await http.get(Uri.parse('http://localhost:5000/anomalies'));
     setState(() {
       rateLimits = json.decode(limitsRes.body);
-      blockedRequests = json.decode(blockedRes.body)['blockedRequests'];
-      trafficLogs = json.decode(logsRes.body)['requestLogs'];
-      anomalies = anomaliesRes.statusCode == 200 ? json.decode(anomaliesRes.body) : {};
+      // blockedRequests = json.decode(blockedRes.body)['blockedRequests'];
+      // trafficLogs = json.decode(logsRes.body)['requestLogs'];
+      // anomalies = anomaliesRes.statusCode == 200 ? json.decode(anomaliesRes.body) : {};
       loading = false;
     });
   }
